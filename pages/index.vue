@@ -1,7 +1,10 @@
 <template>
     <div
-        class="min-h-screen bg-night text-white relative"
-        :class="obsMode ? 'flex flex-col items-center justify-center px-2 py-4' : 'px-4 py-6'"
+        class="min-h-screen relative text-white"
+        :class="[
+            chromaMode ? 'bg-[#00FF00]' : 'bg-night',
+            obsMode ? 'flex flex-col items-center justify-center px-2 py-4' : 'px-4 py-6'
+        ]"
     >
         <!-- Header with image and text -->
         <div v-if="!obsMode" class="mx-auto mb-6 flex max-w-7xl flex-col gap-4 md:flex-row">
@@ -49,7 +52,8 @@
             <!-- Roulette Canvas + Result -->
             <div class="flex flex-col items-center" :class="obsMode ? 'w-full max-w-[min(100%,600px)]' : 'flex-1'">
                 <div
-                    class="relative mx-auto w-full max-w-[min(100%,600px)] aspect-square shadow-2xl rounded-full ring-4 ring-moonstone/30 ring-offset-4 ring-offset-night"
+                    class="relative mx-auto aspect-square w-full max-w-[min(100%,600px)] rounded-full shadow-2xl ring-4 ring-moonstone/30 ring-offset-4"
+                    :class="chromaMode ? 'ring-offset-[#00FF00]' : 'ring-offset-night'"
                 >
                     <canvas
                         ref="canvas"
@@ -62,9 +66,20 @@
                         class="pointer-events-none absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-1"
                         aria-hidden="true"
                     >
-                        <div
-                            class="h-0 w-0 border-x-[14px] border-x-transparent border-b-[26px] border-b-red-500 drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]"
-                        ></div>
+                        <svg
+                            class="h-8 w-9 overflow-visible drop-shadow-[0_2px_4px_rgba(0,0,0,0.55)]"
+                            viewBox="0 0 36 32"
+                            xmlns="http://www.w3.org/2000/svg"
+                        >
+                            <polygon
+                                points="18,2 34,30 2,30"
+                                fill="#dc2626"
+                                stroke="#f8fafc"
+                                stroke-width="2.5"
+                                stroke-linejoin="round"
+                                paint-order="stroke fill"
+                            />
+                        </svg>
                     </div>
                     <!-- Winner overlay on the wheel -->
                     <div
@@ -138,6 +153,10 @@
                             <label class="mb-2 flex cursor-pointer items-center gap-2 text-sm">
                                 <input v-model="shareIncludeObs" type="checkbox" class="rounded border-gray-500" />
                                 OBS
+                            </label>
+                            <label class="mb-2 flex cursor-pointer items-center gap-2 text-sm">
+                                <input v-model="shareIncludeChroma" type="checkbox" class="rounded border-gray-500" />
+                                Chroma-Grün (<code class="text-moonstone">#00FF00</code>)
                             </label>
                             <div class="flex gap-2">
                                 <input
@@ -236,6 +255,12 @@ const obsMode = computed(() => {
     return o === '1' || o === 'true' || o === 'yes';
 });
 
+/** Grüner Hintergrund für Chroma Key in OBS; Radfarben werden von diesem Grün weggeschoben. */
+const chromaMode = computed(() => {
+    const c = route.query.chroma;
+    return c === '1' || c === 'true' || c === 'yes';
+});
+
 /**
  * URL-Parameter (steuern die Seite beim Laden):
  * - entries | e — Einträge, kommagetrennt (URL-kodiert)
@@ -246,6 +271,7 @@ const obsMode = computed(() => {
  * - victory | win — 0/false/off: Siegton aus; 1/true: an
  * - autostart — 1/true: Rad startet automatisch nach 1&nbsp;s (z. B. OBS; Ton ggf. ohne Nutzerinteraktion nicht möglich)
  * - obs — 1/true: nur Glücksrad + Gewinner-Overlay (kein Text, keine Seitenleiste, kein Footer)
+ * - chroma — 1/true: Hintergrund #00FF00 (Chroma Key); Segmentfarben werden so angepasst, dass sie nicht mit diesem Grün kollidieren
  */
 
 /** Canvas convention: 0 rad = 3 o'clock, angles increase clockwise. Top of wheel = this value. */
@@ -266,6 +292,54 @@ function relativeLuminance(hex) {
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
+/** Standard Chroma-Key-Grün (nicht #ff0000 — das ist Rot). */
+const CHROMA_KEY_RGB = {r: 0, g: 255, b: 0};
+
+function hexToRgb(hex) {
+    const h = hex.replace('#', '');
+    if (h.length !== 6) return null;
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
+    if ([r, g, b].some((n) => Number.isNaN(n))) return null;
+    return {r, g, b};
+}
+
+function rgbToHex(r, g, b) {
+    const clamp = (n) => Math.max(0, Math.min(255, Math.round(n)));
+    return `#${[clamp(r), clamp(g), clamp(b)]
+        .map((x) => x.toString(16).padStart(2, '0'))
+        .join('')}`;
+}
+
+function colorConflictsWithChromaGreen(rgb) {
+    if (!rgb) return false;
+    const dr = rgb.r - CHROMA_KEY_RGB.r;
+    const dg = rgb.g - CHROMA_KEY_RGB.g;
+    const db = rgb.b - CHROMA_KEY_RGB.b;
+    const distSq = dr * dr + dg * dg + db * db;
+    if (distSq < 165 * 165) return true;
+    if (rgb.g >= 130 && rgb.g > rgb.r + 35 && rgb.g > rgb.b + 35) return true;
+    return false;
+}
+
+/** Ersetzt Grün-/Neon-Töne, die in OBS mit #00FF00 mitgekeyt würden. */
+function sanitizeColorForChromaKey(hex) {
+    const rgb = hexToRgb(hex);
+    if (!rgb) return hex;
+    if (!colorConflictsWithChromaGreen(rgb)) return hex;
+
+    let {r, g, b} = rgb;
+    g = Math.min(g, 105);
+    r = Math.min(255, r + 50);
+    b = Math.min(255, b + 55);
+    let out = {r, g, b};
+    if (colorConflictsWithChromaGreen(out)) {
+        return '#1e6b8a';
+    }
+    return rgbToHex(r, g, b);
+}
+
 const inputText = ref('Pizza,Burger,Pasta,Sushi');
 const segments = ref([]);
 const spinDuration = ref(10);
@@ -277,6 +351,7 @@ const soundVictoryEnabled = ref(true);
 const shareOpen = ref(false);
 const shareIncludeAutostart = ref(false);
 const shareIncludeObs = ref(false);
+const shareIncludeChroma = ref(false);
 const shareCopied = ref(false);
 let shareCopyResetId = 0;
 
@@ -334,22 +409,25 @@ function playVictorySound() {
     });
 }
 
-/** Farbgruppen à 4 Schemas (2×2). Pastel unter Bunt, Dark unter Zweifarbig. */
+/**
+ * Farbgruppen à 4 Schemas (2×2). Pastel unter Bunt, Dark unter Zweifarbig.
+ * Keine hellen/Neon-Grüntöne nahe Chroma-Key #00FF00 — stattdessen Blau, Violett, Schiefer, Warmtöne.
+ */
 const colorSchemeGroups = [
     {
         title: 'Bunt',
         schemes: [
-            {colors: ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22']},
-            {colors: ['#1abc9c', '#e67e22', '#34495e', '#ff6f61', '#8e44ad', '#f39c12']},
-            {colors: ['#2c3e50', '#16a085', '#f39c12', '#c0392b', '#7f8c8d', '#2980b9']},
-            {colors: ['#FF6B6B', '#4ECDC4', '#FFE66D', '#95E1D3', '#AA96DA', '#FCBAD3']}
+            {colors: ['#e74c3c', '#3498db', '#6c5ce7', '#f1c40f', '#9b59b6', '#e67e22']},
+            {colors: ['#5499c7', '#e67e22', '#34495e', '#ff6f61', '#8e44ad', '#f39c12']},
+            {colors: ['#2c3e50', '#2874a6', '#f39c12', '#c0392b', '#7f8c8d', '#2980b9']},
+            {colors: ['#FF6B6B', '#74b9ff', '#FFE66D', '#fab1a0', '#AA96DA', '#FCBAD3']}
         ]
     },
     {
         title: 'Pastel',
         schemes: [
             {colors: ['#F5E6D8', '#EDD5C4', '#E4C4B0', '#D9B49A', '#CEA88A', '#E8DDD0']},
-            {colors: ['#E3EDE3', '#D2E4D4', '#C0D9C4', '#ADC8B2', '#9BB8A4', '#F0F7F1']},
+            {colors: ['#E8ECF2', '#DCE3ED', '#CED9E8', '#BFD0E0', '#B0C6D8', '#F2F5FA']},
             {colors: ['#F3E4E8', '#E8D0DA', '#DDBCC8', '#D0A8B8', '#C498A8', '#EFE2E6']},
             {colors: ['#E8E4F2', '#DDD6EA', '#D0C8E0', '#C4BAD6', '#D8D2EC', '#F0ECFA']}
         ]
@@ -359,7 +437,7 @@ const colorSchemeGroups = [
         schemes: [
             {colors: ['#0d47a1', '#1565c0', '#1976d2', '#1e88e5', '#42a5f5', '#64b5f6', '#90caf9']},
             {colors: ['#311b92', '#4527a0', '#512da8', '#5e35b1', '#673ab7', '#7e57c2', '#9575cd']},
-            {colors: ['#1b5e20', '#2e7d32', '#388e3c', '#43a047', '#4caf50', '#66bb6a', '#81c784']},
+            {colors: ['#1c2833', '#273746', '#34495e', '#415a6b', '#4d6a7c', '#5d7a8d', '#6d8a9e']},
             {colors: ['#bf360c', '#d84315', '#e64a19', '#f4511e', '#ff5722', '#ff7043', '#ff8a65']}
         ]
     },
@@ -370,7 +448,7 @@ const colorSchemeGroups = [
                 colors: [
                     '#E69F00',
                     '#56B4E9',
-                    '#009E73',
+                    '#0077B6',
                     '#F0E442',
                     '#0072B2',
                     '#D55E00',
@@ -380,8 +458,8 @@ const colorSchemeGroups = [
             {
                 colors: [
                     '#332288',
-                    '#117733',
-                    '#44AA99',
+                    '#3d5a80',
+                    '#457B9D',
                     '#882255',
                     '#DDCC77',
                     '#AA4499',
@@ -395,7 +473,7 @@ const colorSchemeGroups = [
                     '#DC267F',
                     '#FE6100',
                     '#FFB000',
-                    '#009F4D',
+                    '#023E8A',
                     '#3B1F2B'
                 ]
             },
@@ -404,10 +482,10 @@ const colorSchemeGroups = [
                     '#88CCEE',
                     '#CC6677',
                     '#DDCC77',
-                    '#117733',
+                    '#3d5a80',
                     '#332288',
                     '#AA4499',
-                    '#44AA99'
+                    '#457B9D'
                 ]
             }
         ]
@@ -417,7 +495,7 @@ const colorSchemeGroups = [
         schemes: [
             {colors: ['#0a0a0a', '#ffffff']},
             {colors: ['#d32f2f', '#0a0a0a']},
-            {colors: ['#39ff14', '#0a0a0a']},
+            {colors: ['#e91e63', '#0a0a0a']},
             {colors: ['#1e88e5', '#0a0a0a']}
         ]
     },
@@ -444,7 +522,7 @@ function presetGlobalIndex(groupIndex, schemeIndex) {
 
 const selectedColorPreset = ref(0);
 
-function buildShareUrl(includeAutostart, includeObs) {
+function buildShareUrl(includeAutostart, includeObs, includeChroma) {
     if (import.meta.server) return '';
     const params = new URLSearchParams();
     const ent = inputText.value.trim();
@@ -456,15 +534,18 @@ function buildShareUrl(includeAutostart, includeObs) {
     if (!soundVictoryEnabled.value) params.set('victory', '0');
     if (includeAutostart) params.set('autostart', '1');
     if (includeObs) params.set('obs', '1');
+    if (includeChroma) params.set('chroma', '1');
     const qs = params.toString();
     const path = route.path || '/';
     return `${window.location.origin}${path}${qs ? `?${qs}` : ''}`;
 }
 
-const shareUrlDisplay = computed(() => buildShareUrl(shareIncludeAutostart.value, shareIncludeObs.value));
+const shareUrlDisplay = computed(() =>
+    buildShareUrl(shareIncludeAutostart.value, shareIncludeObs.value, shareIncludeChroma.value)
+);
 
 async function copyShareLink() {
-    const url = buildShareUrl(shareIncludeAutostart.value, shareIncludeObs.value);
+    const url = buildShareUrl(shareIncludeAutostart.value, shareIncludeObs.value, shareIncludeChroma.value);
     try {
         await navigator.clipboard?.writeText(url);
         shareCopied.value = true;
@@ -545,7 +626,8 @@ const drawWheel = () => {
         ctx.moveTo(center, center);
         ctx.arc(center, center, radius, angleStart, angleStart + arc);
         ctx.closePath();
-        const segHex = preset[i % preset.length];
+        const rawHex = preset[i % preset.length];
+        const segHex = chromaMode.value ? sanitizeColorForChromaKey(rawHex) : rawHex;
         ctx.fillStyle = segHex;
         ctx.fill();
         ctx.strokeStyle = 'rgba(0,0,0,0.35)';
