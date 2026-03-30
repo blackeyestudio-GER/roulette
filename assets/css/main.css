@@ -1,3 +1,19 @@
 body {
     @apply bg-night text-dim-gray;
 }
+
+/* Full-viewport key color for OBS; avoids gray body behind layout margins / browser source letterboxing */
+html.chroma-key-active,
+html.chroma-key-active body,
+html.chroma-key-active #app {
+    background-color: #00ff00 !important;
+}
+
+html.chroma-key-active,
+html.chroma-key-active body {
+    min-height: 100%;
+}
+
+html.chroma-key-active #app {
+    min-height: 100vh;
+}

@@ -52,8 +52,12 @@
             <!-- Roulette Canvas + Result -->
             <div class="flex flex-col items-center" :class="obsMode ? 'w-full max-w-[min(100%,600px)]' : 'flex-1'">
                 <div
-                    class="relative mx-auto aspect-square w-full max-w-[min(100%,600px)] rounded-full shadow-2xl ring-4 ring-moonstone/30 ring-offset-4"
-                    :class="chromaMode ? 'ring-offset-[#00FF00]' : 'ring-offset-night'"
+                    class="relative mx-auto aspect-square w-full max-w-[min(100%,600px)] rounded-full"
+                    :class="
+                        chromaMode
+                            ? 'border-2 border-[#0a0a0a] shadow-none'
+                            : 'shadow-2xl ring-4 ring-moonstone/30 ring-offset-4 ring-offset-night'
+                    "
                 >
                     <canvas
                         ref="canvas"
@@ -67,7 +71,8 @@
                         aria-hidden="true"
                     >
                         <svg
-                            class="h-8 w-9 overflow-visible drop-shadow-[0_2px_4px_rgba(0,0,0,0.55)]"
+                            class="h-8 w-9 overflow-visible"
+                            :class="chromaMode ? '' : 'drop-shadow-[0_2px_4px_rgba(0,0,0,0.55)]'"
                             viewBox="0 0 36 32"
                             xmlns="http://www.w3.org/2000/svg"
                         >
@@ -261,6 +266,13 @@ const chromaMode = computed(() => {
     return c === '1' || c === 'true' || c === 'yes';
 });
 
+/** Paint entire document #00FF00 so OBS Chroma Key sees one flat color (body was still bg-night in margins). */
+useHead(() => ({
+    htmlAttrs: {
+        class: chromaMode.value ? 'chroma-key-active' : undefined,
+    },
+}));
+
 /**
  * URL-Parameter (steuern die Seite beim Laden):
  * - entries | e — Einträge, kommagetrennt (URL-kodiert)
@@ -271,7 +283,7 @@ const chromaMode = computed(() => {
  * - victory | win — 0/false/off: Siegton aus; 1/true: an
  * - autostart — 1/true: Rad startet automatisch nach 1&nbsp;s (z. B. OBS; Ton ggf. ohne Nutzerinteraktion nicht möglich)
  * - obs — 1/true: nur Glücksrad + Gewinner-Overlay (kein Text, keine Seitenleiste, kein Footer)
- * - chroma — 1/true: Hintergrund #00FF00 (Chroma Key); Segmentfarben werden so angepasst, dass sie nicht mit diesem Grün kollidieren
+ * - chroma — 1/true: gesamtes Dokument #00FF00 (Chroma Key in OBS); kein Ring/Schatten am Rad (sauberer Key); Segmentfarben ohne Kollision mit Key-Grün
  */
 
 /** Canvas convention: 0 rad = 3 o'clock, angles increase clockwise. Top of wheel = this value. */
