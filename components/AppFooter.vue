@@ -1,10 +1,9 @@
 <template>
-  <footer class="sticky bottom-0 w-full px-5 py-2 drop-shadow-2xl flex flex-row items-center gap-5 bg-night content-start">
-    <small>
-      &copy; 2024 template. All rights reserved.
-    </small>
-  </footer>
+    <footer class="sticky bottom-0 z-10 flex w-full flex-wrap items-center justify-center gap-x-4 gap-y-2 border-t border-white/10 bg-night px-4 py-3 text-xs text-dim-gray drop-shadow-2xl">
+        <small class="text-center">&copy; 2026 Arthur Kielbasa / BlackEyeStudio</small>
+        <nav class="flex flex-wrap items-center justify-center gap-x-4 gap-y-1" aria-label="Rechtliches">
+            <NuxtLink to="/impressum" class="text-moonstone/90 underline decoration-moonstone/30 underline-offset-2 hover:text-white">Impressum</NuxtLink>
+            <NuxtLink to="/datenschutz" class="text-moonstone/90 underline decoration-moonstone/30 underline-offset-2 hover:text-white">Datenschutz</NuxtLink>
+        </nav>
+    </footer>
 </template>
-
-<style scoped>
-</style>
