@@ -13,6 +13,8 @@ export default defineNuxtConfig({
 
   routeRules: {
     '/api/**': { proxy: (process.env.API_HOST || 'http://localhost:8090') + '/**' },
+    '/impressum': { redirect: 'https://blackeyestudio.de/impressum' },
+    '/datenschutz': { redirect: 'https://blackeyestudio.de/datenschutz' },
   },
 
   postcss: {

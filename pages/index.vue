@@ -7,7 +7,7 @@
         ]"
     >
         <!-- Header with image and text -->
-        <div v-if="!obsMode" class="mx-auto mb-6 flex max-w-7xl flex-col gap-4 md:flex-row">
+        <div v-if="!obsMode" class="mx-auto mb-12 mt-[10px] flex max-w-7xl flex-col gap-4 md:flex-row">
             <img class="w-full md:w-1/4 aspect-square object-cover rounded shadow" src="/logo.png" alt="logo" />
             <div class="md:w-3/4 bg-eerie-black p-4 rounded shadow text-sm leading-relaxed text-gray-200">
                 <p>
@@ -61,9 +61,9 @@
                         height="600"
                         class="block h-full w-full rounded-full bg-eerie-black"
                     ></canvas>
-                    <!-- Pointer: top of wheel = canvas angle -π/2 (must match POINTER_RAD in script) -->
+                    <!-- Pointer: tip aims at top of wheel (canvas angle -π/2, POINTER_RAD in script); body sits above rim -->
                     <div
-                        class="pointer-events-none absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-1"
+                        class="pointer-events-none absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-[calc(100%*0.4)]"
                         aria-hidden="true"
                     >
                         <svg
@@ -72,7 +72,7 @@
                             xmlns="http://www.w3.org/2000/svg"
                         >
                             <polygon
-                                points="18,2 34,30 2,30"
+                                points="2,2 34,2 18,30"
                                 fill="#dc2626"
                                 stroke="#f8fafc"
                                 stroke-width="2.5"
