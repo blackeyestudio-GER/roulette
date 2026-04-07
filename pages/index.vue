@@ -293,6 +293,18 @@ useHead(() => ({
 }));
 
 /**
+ * Live/SSG: Klasse zusätzlich auf documentElement setzen (useHead kann je nach Hosting zu spät fehlen; #__nuxt braucht CSS oben).
+ */
+watch(
+    transparentMode,
+    (on) => {
+        if (!import.meta.client) return;
+        document.documentElement.classList.toggle('obs-transparent-active', on);
+    },
+    {immediate: true}
+);
+
+/**
  * URL-Parameter (steuern die Seite beim Laden):
  * - entries | e — Einträge, kommagetrennt (URL-kodiert)
  * - duration | d — Drehdauer in Sekunden (1–300)
@@ -771,6 +783,9 @@ watch(
 );
 
 onUnmounted(() => {
+    if (import.meta.client) {
+        document.documentElement.classList.remove('obs-transparent-active');
+    }
     if (spinRafId) cancelAnimationFrame(spinRafId);
     clearTimeout(autostartTimeoutId);
     clearTimeout(shareCopyResetId);
