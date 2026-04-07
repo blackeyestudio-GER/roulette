@@ -2,7 +2,7 @@
     <div
         class="min-h-screen relative text-white"
         :class="[
-            chromaMode ? 'bg-[#00FF00]' : 'bg-night',
+            rootBgClass,
             obsMode ? 'flex flex-col items-center justify-center px-2 py-4' : 'px-4 py-6'
         ]"
     >
@@ -52,12 +52,20 @@
             <!-- Roulette Canvas + Result -->
             <div class="flex flex-col items-center" :class="obsMode ? 'w-full max-w-[min(100%,600px)]' : 'flex-1'">
                 <div
-                    class="relative mx-auto aspect-square w-full max-w-[min(100%,600px)] rounded-full"
-                    :class="
-                        chromaMode
+                    class="relative mx-auto aspect-square w-full max-w-[min(100%,600px)] rounded-full outline-none focus-visible:ring-2 focus-visible:ring-moonstone/60 focus-visible:ring-offset-2 focus-visible:ring-offset-night"
+                    :class="[
+                        wheelCleanEdge
                             ? 'border-2 border-[#0a0a0a] shadow-none'
-                            : 'shadow-2xl ring-4 ring-moonstone/30 ring-offset-4 ring-offset-night'
-                    "
+                            : 'shadow-2xl ring-4 ring-moonstone/30 ring-offset-4 ring-offset-night',
+                        wheelClickable ? 'cursor-pointer' : ''
+                    ]"
+                    role="button"
+                    :tabindex="wheelClickable ? 0 : -1"
+                    :aria-disabled="!wheelClickable"
+                    aria-label="Roulette starten"
+                    @click="onWheelActivate"
+                    @keydown.enter.prevent="onWheelActivate"
+                    @keydown.space.prevent="onWheelActivate"
                 >
                     <canvas
                         ref="canvas"
@@ -72,7 +80,7 @@
                     >
                         <svg
                             class="h-8 w-9 overflow-visible"
-                            :class="chromaMode ? '' : 'drop-shadow-[0_2px_4px_rgba(0,0,0,0.55)]'"
+                            :class="wheelCleanEdge ? '' : 'drop-shadow-[0_2px_4px_rgba(0,0,0,0.55)]'"
                             viewBox="0 0 36 32"
                             xmlns="http://www.w3.org/2000/svg"
                         >
@@ -158,10 +166,6 @@
                             <label class="mb-2 flex cursor-pointer items-center gap-2 text-sm">
                                 <input v-model="shareIncludeObs" type="checkbox" class="rounded border-gray-500" />
                                 OBS
-                            </label>
-                            <label class="mb-2 flex cursor-pointer items-center gap-2 text-sm">
-                                <input v-model="shareIncludeChroma" type="checkbox" class="rounded border-gray-500" />
-                                Chroma-Grün (<code class="text-moonstone">#00FF00</code>)
                             </label>
                             <div class="flex gap-2">
                                 <input
@@ -260,16 +264,31 @@ const obsMode = computed(() => {
     return o === '1' || o === 'true' || o === 'yes';
 });
 
-/** Grüner Hintergrund für Chroma Key in OBS; Radfarben werden von diesem Grün weggeschoben. */
-const chromaMode = computed(() => {
-    const c = route.query.chroma;
-    return c === '1' || c === 'true' || c === 'yes';
+function queryTruthy(v) {
+    return v === '1' || v === 'true' || v === 'yes';
+}
+
+/**
+ * Transparenter Seitenhintergrund für OBS Browser Source (Alpha).
+ * ?transparent=1 | ?alpha=1 — alte Links mit ?chroma=1 werden ebenfalls transparent behandelt (kein Grün mehr).
+ */
+const transparentMode = computed(() => {
+    const q = route.query;
+    const t = Array.isArray(q.transparent) ? q.transparent[0] : q.transparent;
+    const a = Array.isArray(q.alpha) ? q.alpha[0] : q.alpha;
+    const legacy = Array.isArray(q.chroma) ? q.chroma[0] : q.chroma;
+    return queryTruthy(t) || queryTruthy(a) || queryTruthy(legacy);
 });
 
-/** Paint entire document #00FF00 so OBS Chroma Key sees one flat color (body was still bg-night in margins). */
+const rootBgClass = computed(() => (transparentMode.value ? 'bg-transparent' : 'bg-night'));
+
+/** Kein weicher Ring/Schatten — sauberer Alpha-Kanal um das Rad. */
+const wheelCleanEdge = computed(() => transparentMode.value);
+
+/** Volle Seite transparent für OBS (html/body/#app). */
 useHead(() => ({
     htmlAttrs: {
-        class: chromaMode.value ? 'chroma-key-active' : undefined,
+        class: transparentMode.value ? 'obs-transparent-active' : undefined,
     },
 }));
 
@@ -283,7 +302,8 @@ useHead(() => ({
  * - victory | win — 0/false/off: Siegton aus; 1/true: an
  * - autostart — 1/true: Rad startet automatisch nach 1&nbsp;s (z. B. OBS; Ton ggf. ohne Nutzerinteraktion nicht möglich)
  * - obs — 1/true: nur Glücksrad + Gewinner-Overlay (kein Text, keine Seitenleiste, kein Footer)
- * - chroma — 1/true: gesamtes Dokument #00FF00 (Chroma Key in OBS); kein Ring/Schatten am Rad (sauberer Key); Segmentfarben ohne Kollision mit Key-Grün
+ * - transparent | alpha — 1/true: Hintergrund durchsichtig (OBS Browser-Quelle mit Alpha)
+ * - chroma — veraltet: wird wie transparent behandelt (frühere geteilte Links bleiben nutzbar)
  */
 
 /** Canvas convention: 0 rad = 3 o'clock, angles increase clockwise. Top of wheel = this value. */
@@ -304,54 +324,6 @@ function relativeLuminance(hex) {
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-/** Standard Chroma-Key-Grün (nicht #ff0000 — das ist Rot). */
-const CHROMA_KEY_RGB = {r: 0, g: 255, b: 0};
-
-function hexToRgb(hex) {
-    const h = hex.replace('#', '');
-    if (h.length !== 6) return null;
-    const r = parseInt(h.slice(0, 2), 16);
-    const g = parseInt(h.slice(2, 4), 16);
-    const b = parseInt(h.slice(4, 6), 16);
-    if ([r, g, b].some((n) => Number.isNaN(n))) return null;
-    return {r, g, b};
-}
-
-function rgbToHex(r, g, b) {
-    const clamp = (n) => Math.max(0, Math.min(255, Math.round(n)));
-    return `#${[clamp(r), clamp(g), clamp(b)]
-        .map((x) => x.toString(16).padStart(2, '0'))
-        .join('')}`;
-}
-
-function colorConflictsWithChromaGreen(rgb) {
-    if (!rgb) return false;
-    const dr = rgb.r - CHROMA_KEY_RGB.r;
-    const dg = rgb.g - CHROMA_KEY_RGB.g;
-    const db = rgb.b - CHROMA_KEY_RGB.b;
-    const distSq = dr * dr + dg * dg + db * db;
-    if (distSq < 165 * 165) return true;
-    if (rgb.g >= 130 && rgb.g > rgb.r + 35 && rgb.g > rgb.b + 35) return true;
-    return false;
-}
-
-/** Ersetzt Grün-/Neon-Töne, die in OBS mit #00FF00 mitgekeyt würden. */
-function sanitizeColorForChromaKey(hex) {
-    const rgb = hexToRgb(hex);
-    if (!rgb) return hex;
-    if (!colorConflictsWithChromaGreen(rgb)) return hex;
-
-    let {r, g, b} = rgb;
-    g = Math.min(g, 105);
-    r = Math.min(255, r + 50);
-    b = Math.min(255, b + 55);
-    let out = {r, g, b};
-    if (colorConflictsWithChromaGreen(out)) {
-        return '#1e6b8a';
-    }
-    return rgbToHex(r, g, b);
-}
-
 const inputText = ref('Pizza,Burger,Pasta,Sushi');
 const segments = ref([]);
 const spinDuration = ref(10);
@@ -363,7 +335,6 @@ const soundVictoryEnabled = ref(true);
 const shareOpen = ref(false);
 const shareIncludeAutostart = ref(false);
 const shareIncludeObs = ref(false);
-const shareIncludeChroma = ref(false);
 const shareCopied = ref(false);
 let shareCopyResetId = 0;
 
@@ -423,7 +394,7 @@ function playVictorySound() {
 
 /**
  * Farbgruppen à 4 Schemas (2×2). Pastel unter Bunt, Dark unter Zweifarbig.
- * Keine hellen/Neon-Grüntöne nahe Chroma-Key #00FF00 — stattdessen Blau, Violett, Schiefer, Warmtöne.
+ * Keine grellen Neon-Grüntöne — stattdessen Blau, Violett, Schiefer, Warmtöne.
  */
 const colorSchemeGroups = [
     {
@@ -534,7 +505,7 @@ function presetGlobalIndex(groupIndex, schemeIndex) {
 
 const selectedColorPreset = ref(0);
 
-function buildShareUrl(includeAutostart, includeObs, includeChroma) {
+function buildShareUrl(includeAutostart, includeObs) {
     if (import.meta.server) return '';
     const params = new URLSearchParams();
     const ent = inputText.value.trim();
@@ -545,19 +516,21 @@ function buildShareUrl(includeAutostart, includeObs, includeChroma) {
     if (!soundTickEnabled.value) params.set('tick', '0');
     if (!soundVictoryEnabled.value) params.set('victory', '0');
     if (includeAutostart) params.set('autostart', '1');
-    if (includeObs) params.set('obs', '1');
-    if (includeChroma) params.set('chroma', '1');
+    if (includeObs) {
+        params.set('obs', '1');
+        params.set('transparent', '1');
+    }
     const qs = params.toString();
     const path = route.path || '/';
     return `${window.location.origin}${path}${qs ? `?${qs}` : ''}`;
 }
 
 const shareUrlDisplay = computed(() =>
-    buildShareUrl(shareIncludeAutostart.value, shareIncludeObs.value, shareIncludeChroma.value)
+    buildShareUrl(shareIncludeAutostart.value, shareIncludeObs.value)
 );
 
 async function copyShareLink() {
-    const url = buildShareUrl(shareIncludeAutostart.value, shareIncludeObs.value, shareIncludeChroma.value);
+    const url = buildShareUrl(shareIncludeAutostart.value, shareIncludeObs.value);
     try {
         await navigator.clipboard?.writeText(url);
         shareCopied.value = true;
@@ -572,8 +545,18 @@ async function copyShareLink() {
 
 const canvas = ref(null);
 let angle = 0;
-let spinning = false;
+const spinning = ref(false);
 let spinRafId = 0;
+
+/** Klick / Enter / Space auf dem Rad — u. a. für OBS-Interaktion ohne Autostart. */
+const wheelClickable = computed(
+    () => segments.value.length > 0 && !spinning.value && winner.value == null
+);
+
+function onWheelActivate() {
+    if (!wheelClickable.value) return;
+    spinWheel();
+}
 
 const updateSegments = () => {
     segments.value = inputText.value
@@ -638,8 +621,7 @@ const drawWheel = () => {
         ctx.moveTo(center, center);
         ctx.arc(center, center, radius, angleStart, angleStart + arc);
         ctx.closePath();
-        const rawHex = preset[i % preset.length];
-        const segHex = chromaMode.value ? sanitizeColorForChromaKey(rawHex) : rawHex;
+        const segHex = preset[i % preset.length];
         ctx.fillStyle = segHex;
         ctx.fill();
         ctx.strokeStyle = 'rgba(0,0,0,0.35)';
@@ -678,8 +660,8 @@ const drawWheel = () => {
 };
 
 const spinWheel = () => {
-    if (spinning || segments.value.length === 0) return;
-    spinning = true;
+    if (spinning.value || segments.value.length === 0) return;
+    spinning.value = true;
     winner.value = null;
 
     void getAudioContext()?.resume();
@@ -732,7 +714,7 @@ const finalizeSpin = () => {
     if (index >= n) index = n - 1;
     if (index < 0) index = 0;
     winner.value = segments.value[index];
-    spinning = false;
+    spinning.value = false;
     playVictorySound();
 };
 

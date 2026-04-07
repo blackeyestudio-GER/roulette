@@ -2,18 +2,18 @@ body {
     @apply bg-night text-dim-gray;
 }
 
-/* Full-viewport key color for OBS; avoids gray body behind layout margins / browser source letterboxing */
-html.chroma-key-active,
-html.chroma-key-active body,
-html.chroma-key-active #app {
-    background-color: #00ff00 !important;
+/* OBS Browser Source: echte Transparenz (Alpha). Quelle muss transparente Pixel unterstützen. */
+html.obs-transparent-active,
+html.obs-transparent-active body,
+html.obs-transparent-active #app {
+    background-color: transparent !important;
 }
 
-html.chroma-key-active,
-html.chroma-key-active body {
+html.obs-transparent-active,
+html.obs-transparent-active body {
     min-height: 100%;
 }
 
-html.chroma-key-active #app {
+html.obs-transparent-active #app {
     min-height: 100vh;
 }
