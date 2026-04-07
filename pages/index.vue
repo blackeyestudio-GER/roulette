@@ -1,10 +1,7 @@
 <template>
     <div
         class="min-h-screen relative text-white"
-        :class="[
-            rootBgClass,
-            obsMode ? 'flex flex-col items-center justify-center px-2 py-4' : 'px-4 py-6'
-        ]"
+        :class="[obsMode ? 'flex flex-col items-center justify-center px-2 py-4' : 'px-4 py-6']"
     >
         <!-- Header with image and text -->
         <div v-if="!obsMode" class="mx-auto mb-12 mt-[10px] flex max-w-7xl flex-col gap-4 md:flex-row">
@@ -269,18 +266,17 @@ function queryTruthy(v) {
 }
 
 /**
- * Transparenter Seitenhintergrund für OBS Browser Source (Alpha).
- * ?transparent=1 | ?alpha=1 — alte Links mit ?chroma=1 werden ebenfalls transparent behandelt (kein Grün mehr).
+ * Transparenter Seitenhintergrund (OBS Alpha). Bei obs=1 immer an — kein extra ?transparent nötig.
+ * Optional: ?transparent=1 | ?alpha=1 ohne OBS; ?chroma=1 (veraltet) zählt wie transparent.
  */
 const transparentMode = computed(() => {
+    if (obsMode.value) return true;
     const q = route.query;
     const t = Array.isArray(q.transparent) ? q.transparent[0] : q.transparent;
     const a = Array.isArray(q.alpha) ? q.alpha[0] : q.alpha;
     const legacy = Array.isArray(q.chroma) ? q.chroma[0] : q.chroma;
     return queryTruthy(t) || queryTruthy(a) || queryTruthy(legacy);
 });
-
-const rootBgClass = computed(() => (transparentMode.value ? 'bg-transparent' : 'bg-night'));
 
 /** Kein weicher Ring/Schatten — sauberer Alpha-Kanal um das Rad. */
 const wheelCleanEdge = computed(() => transparentMode.value);
@@ -295,14 +291,28 @@ useHead(() => ({
 /**
  * Live/SSG: Klasse zusätzlich auf documentElement setzen (useHead kann je nach Hosting zu spät fehlen; #__nuxt braucht CSS oben).
  */
-watch(
-    transparentMode,
-    (on) => {
-        if (!import.meta.client) return;
-        document.documentElement.classList.toggle('obs-transparent-active', on);
-    },
-    {immediate: true}
-);
+function applyTransparentToDocument(on) {
+    if (!import.meta.client) return;
+    const html = document.documentElement;
+    const body = document.body;
+    const nuxt = document.getElementById('__nuxt');
+    const app = document.getElementById('app');
+    if (on) {
+        html.classList.add('obs-transparent-active');
+        html.style.setProperty('background', 'transparent', 'important');
+        body.style.setProperty('background', 'transparent', 'important');
+        nuxt?.style.setProperty('background', 'transparent', 'important');
+        app?.style.setProperty('background', 'transparent', 'important');
+    } else {
+        html.classList.remove('obs-transparent-active');
+        html.style.removeProperty('background');
+        body.style.removeProperty('background');
+        nuxt?.style.removeProperty('background');
+        app?.style.removeProperty('background');
+    }
+}
+
+watch(transparentMode, (on) => applyTransparentToDocument(on), {immediate: true});
 
 /**
  * URL-Parameter (steuern die Seite beim Laden):
@@ -313,9 +323,9 @@ watch(
  * - tick — 0/false/off: Klacken aus; 1/true: an
  * - victory | win — 0/false/off: Siegton aus; 1/true: an
  * - autostart — 1/true: Rad startet automatisch nach 1&nbsp;s (z. B. OBS; Ton ggf. ohne Nutzerinteraktion nicht möglich)
- * - obs — 1/true: nur Glücksrad + Gewinner-Overlay (kein Text, keine Seitenleiste, kein Footer)
- * - transparent | alpha — 1/true: Hintergrund durchsichtig (OBS Browser-Quelle mit Alpha)
- * - chroma — veraltet: wird wie transparent behandelt (frühere geteilte Links bleiben nutzbar)
+ * - obs — 1/true: nur Rad + Overlay; transparenter Hintergrund automatisch (Browser-Quelle mit Alpha)
+ * - transparent | alpha — optional ohne obs: Seite transparent (selten nötig)
+ * - chroma — veraltet: wie transparent (alte Links)
  */
 
 /** Canvas convention: 0 rad = 3 o'clock, angles increase clockwise. Top of wheel = this value. */
@@ -528,10 +538,7 @@ function buildShareUrl(includeAutostart, includeObs) {
     if (!soundTickEnabled.value) params.set('tick', '0');
     if (!soundVictoryEnabled.value) params.set('victory', '0');
     if (includeAutostart) params.set('autostart', '1');
-    if (includeObs) {
-        params.set('obs', '1');
-        params.set('transparent', '1');
-    }
+    if (includeObs) params.set('obs', '1');
     const qs = params.toString();
     const path = route.path || '/';
     return `${window.location.origin}${path}${qs ? `?${qs}` : ''}`;
@@ -769,7 +776,10 @@ onMounted(() => {
     window.addEventListener('pointerdown', audioResumeBump, {capture: true, passive: true});
     window.addEventListener('touchstart', audioResumeBump, {capture: true, passive: true});
 
-    nextTick(() => drawWheel());
+    nextTick(() => {
+        drawWheel();
+        applyTransparentToDocument(transparentMode.value);
+    });
     scheduleAutostartFromQuery();
 });
 
@@ -784,7 +794,7 @@ watch(
 
 onUnmounted(() => {
     if (import.meta.client) {
-        document.documentElement.classList.remove('obs-transparent-active');
+        applyTransparentToDocument(false);
     }
     if (spinRafId) cancelAnimationFrame(spinRafId);
     clearTimeout(autostartTimeoutId);
